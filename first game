@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Simulator Trading Game</title>
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --text-color: #ffffff;
+            --primary-color: #4CAF50;
+            --danger-color: #f44336;
+            --action-color: #2196F3;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: #2d2d2d;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .chart-container {
+            height: 400px;
+            margin-bottom: 20px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            justify-content: space-between;
+        }
+
+        .long-group,
+        .short-group {
+            display: flex;
+            gap: 10px;
+            flex: 2;
+        }
+
+        .action-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            flex: 1;
+            max-width: 200px;
+        }
+
+        button {
+            padding: 15px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: opacity 0.3s;
+            min-width: 120px;
+        }
+
+        .long {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .short {
+            background-color: var(--danger-color);
+            color: white;
+        }
+
+        .action-group button {
+            background-color: var(--action-color);
+            color: white;
+        }
+
+        @media (max-width: 768px) {
+            .controls {
+                flex-direction: column;
+            }
+            
+            .long-group,
+            .short-group {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+            
+            .action-group {
+                max-width: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Simulator Trading Game</h1>
+        <div>Created by AZEx Community, X: @azex_io</div>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div>Total Equity</div>
+            <div id="totalEquity">$10,000.00</div>
+        </div>
+        <div class="stat-card">
+            <div>Available Margin</div>
+            <div id="availableMargin">$10,000.00</div>
+        </div>
+        <div class="stat-card">
+            <div>Position Size</div>
+            <div id="positionSize">0 BTC</div>
+        </div>
+        <div class="stat-card">
+            <div>Current Price</div>
+            <div id="currentPrice">$--</div>
+        </div>
+        <div class="stat-card">
+            <div>Avg Cost</div>
+            <div id="avgCost">$--</div>
+        </div>
+        <div class="stat-card">
+            <div>Unrealized P/L</div>
+            <div id="unrealizedPL">$--</div>
+        </div>
+        <div class="stat-card">
+            <div>Total Fees</div>
+            <div id="totalFees">$--</div>
+        </div>
+        <div class="stat-card">
+            <div>Realized P/L</div>
+            <div id="realizedPL">$--</div>
+        </div>
+    </div>
+
+    <div class="chart-container" id="chartContainer"></div>
+
+    <div class="controls">
+        <div class="long-group">
+            <button class="long" onclick="openPosition(10, 'long')">LONG 10x</button>
+            <button class="long" onclick="openPosition(50, 'long')">LONG 50x</button>
+            <button class="long" onclick="openPosition(100, 'long')">LONG 100x</button>
+        </div>
+        
+        <div class="short-group">
+            <button class="short" onclick="openPosition(100, 'short')">SHORT 100x</button>
+            <button class="short" onclick="openPosition(50, 'short')">SHORT 50x</button>
+            <button class="short" onclick="openPosition(10, 'short')">SHORT 10x</button>
+        </div>
+
+        <div class="action-group">
+            <button onclick="closeAllPositions()">CLOSE ALL</button>
+            <button onclick="resetGame()">RESET GAME</button>
+        </div>
+    </div>
+
+    <script>
+        let tradingState = {
+            totalEquity: 10000,
+            availableMargin: 10000,
+            positionSize: 0,
+            averageCost: 0,
+            unrealizedPL: 0,
+            realizedPL: 0,
+            totalFees: 0,
+            leverage: 1,
+            currentPrice: 50000,
+            positions: []
+        };
+
+        // Initialize Chart
+        const chart = LightweightCharts.createChart(document.getElementById('chartContainer'), {
+            width: 1200,
+            height: 400,
+            layout: { backgroundColor: '#2d2d2d', textColor: 'rgba(255, 255, 255, 0.9)' },
+            grid: {
+                vertLines: { color: 'rgba(197, 203, 206, 0.2)' },
+                horzLines: { color: 'rgba(197, 203, 206, 0.2)' },
+            },
+        });
+
+        const candleSeries = chart.addCandlestickSeries();
+        let currentTime = Date.now();
+
+        // Generate initial historical data
+        function generateHistoricalData(days = 90) {
+            const data = [];
+            let price = 50000;
+            
+            for(let i = days; i > 0; i--) {
+                const time = new Date(currentTime - i * 86400000);
+                const open = price;
+                price = open * (1 + (Math.random() * 0.02 - 0.01));
+                const high = price * (1 + Math.random() * 0.01);
+                const low = price * (1 - Math.random() * 0.01);
+                
+                data.push({
+                    time: time.toISOString().split('T')[0],
+                    open: Number(open.toFixed(2)),
+                    high: Number(high.toFixed(2)),
+                    low: Number(low.toFixed(2)),
+                    close: Number(price.toFixed(2))
+                });
+            }
+            return data;
+        }
+
+        // Real-time price update
+        function generateNewPrice(currentPrice) {
+            const fluctuation = (Math.random() * 0.02 - 0.01);
+            return currentPrice * (1 + fluctuation);
+        }
+
+        // Initialize chart data
+        candleSeries.setData(generateHistoricalData());
+        updateCurrentPrice(50000);
+
+        // Update price every 3 seconds
+        setInterval(() => {
+            tradingState.currentPrice = generateNewPrice(tradingState.currentPrice);
+            updateCurrentPrice(tradingState.currentPrice);
+            
+            // Update latest candle
+            const newData = {
+                time: new Date().toISOString().split('T')[0],
+                open: tradingState.currentPrice,
+                high: tradingState.currentPrice * (1 + Math.random()*0.005),
+                low: tradingState.currentPrice * (1 - Math.random()*0.005),
+                close: tradingState.currentPrice
+            };
+            candleSeries.update(newData);
+        }, 3000);
+
+        function updateCurrentPrice(price) {
+            document.getElementById('currentPrice').textContent = `$${price.toFixed(2)}`;
+            updateUnrealizedPL();
+            updateStateDisplay();
+        }
+
+        function openPosition(leverage, direction) {
+            const positionValue = tradingState.availableMargin * leverage;
+            const fee = positionValue * 0.0002;
+            
+            tradingState.totalFees += fee;
+            tradingState.availableMargin -= fee;
+            
+            const position = {
+                size: positionValue / tradingState.currentPrice,
+                entryPrice: tradingState.currentPrice,
+                direction: direction,
+                leverage: leverage
+            };
+            
+            tradingState.positions.push(position);
+            updateStateDisplay();
+        }
+
+        function closeAllPositions() {
+            tradingState.positions.forEach(position => {
+                const pl = position.size * (tradingState.currentPrice - position.entryPrice) * 
+                         (position.direction === 'long' ? 1 : -1);
+                tradingState.realizedPL += pl;
+                tradingState.availableMargin += pl;
+            });
+            
+            tradingState.positions = [];
+            updateStateDisplay();
+        }
+
+        function updateUnrealizedPL() {
+            tradingState.unrealizedPL = tradingState.positions.reduce((acc, position) => {
+                return acc + position.size * (tradingState.currentPrice - position.entryPrice) * 
+                      (position.direction === 'long' ? 1 : -1);
+            }, 0);
+            
+            tradingState.totalEquity = tradingState.availableMargin + tradingState.unrealizedPL;
+        }
+
+        function updateStateDisplay() {
+            document.getElementById('totalEquity').textContent = `$${tradingState.totalEquity.toFixed(2)}`;
+            document.getElementById('availableMargin').textContent = `$${tradingState.availableMargin.toFixed(2)}`;
+            document.getElementById('positionSize').textContent = 
+                `${tradingState.positions.reduce((acc, p) => acc + p.size, 0).toFixed(4)} BTC`;
+            document.getElementById('avgCost').textContent = 
+                `$${tradingState.positions.length ? 
+                    (tradingState.positions.reduce((acc, p) => acc + p.entryPrice, 0)/tradingState.positions.length 
+                    : 0).toFixed(2)}`;
+            document.getElementById('unrealizedPL').textContent = `$${tradingState.unrealizedPL.toFixed(2)}`;
+            document.getElementById('totalFees').textContent = `$${tradingState.totalFees.toFixed(2)}`;
+            document.getElementById('realizedPL').textContent = `$${tradingState.realizedPL.toFixed(2)}`;
+        }
+
+        function resetGame() {
+            tradingState = {
+                totalEquity: 10000,
+                availableMargin: 10000,
+                positionSize: 0,
+                averageCost: 0,
+                unrealizedPL: 0,
+                realizedPL: 0,
+                totalFees: 0,
+                leverage: 1,
+                currentPrice: 50000,
+                positions: []
+            };
+            candleSeries.setData(generateHistoricalData());
+            updateStateDisplay();
+            updateCurrentPrice(50000);
+        }
+    </script>
+</body>
+</html>
